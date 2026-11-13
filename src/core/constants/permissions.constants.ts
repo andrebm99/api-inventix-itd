@@ -1,0 +1,92 @@
+export const SYSTEM_PERMISSIONS = [
+  { clave: 'negocio:read', descripcion: 'Ver información y configuración del negocio' },
+  { clave: 'negocio:write', descripcion: 'Editar negocio y feature flags' },
+  { clave: 'sucursal:read', descripcion: 'Listar y consultar sucursales' },
+  { clave: 'sucursal:write', descripcion: 'Crear, editar y eliminar sucursales' },
+  { clave: 'almacen:read', descripcion: 'Listar y consultar almacenes' },
+  { clave: 'almacen:write', descripcion: 'Crear, editar y eliminar almacenes' },
+  { clave: 'usuario:read', descripcion: 'Ver miembros del negocio' },
+  { clave: 'usuario:invite', descripcion: 'Invitar o vincular subusuarios al negocio' },
+  { clave: 'usuario:manage', descripcion: 'Cambiar roles o desactivar miembros' },
+  { clave: 'rol:read', descripcion: 'Consultar roles y permisos' },
+  { clave: 'rol:write', descripcion: 'Crear y editar roles personalizados' },
+  { clave: 'catalogo:read', descripcion: 'Consultar productos, categorías, lotes y ubicaciones' },
+  { clave: 'catalogo:write', descripcion: 'Gestionar productos, categorías, lotes y ubicaciones' },
+  { clave: 'proveedor:read', descripcion: 'Consultar proveedores y convenios' },
+  { clave: 'proveedor:write', descripcion: 'Gestionar proveedores y convenios' },
+  { clave: 'inventario:read', descripcion: 'Consultar stock y movimientos de kárdex' },
+  { clave: 'inventario:write', descripcion: 'Registrar movimientos y traslados' },
+  { clave: 'inventario:approve', descripcion: 'Aprobar y completar movimientos de inventario' },
+  { clave: 'inventario:cancel', descripcion: 'Anular movimientos mediante reversión' },
+  { clave: 'venta:read', descripcion: 'Consultar ventas emitidas' },
+  { clave: 'venta:create', descripcion: 'Registrar ventas y descontar stock' },
+  { clave: 'venta:cancel', descripcion: 'Anular ventas y revertir kárdex' },
+  { clave: 'cierre:read', descripcion: 'Consultar cierres diarios e históricos' },
+  { clave: 'cierre:execute', descripcion: 'Ejecutar cierre de inventario de periodo' },
+  { clave: 'ia:read', descripcion: 'Consultar recomendaciones y análisis predictivo IA' },
+  { clave: 'ia:decide', descripcion: 'Aceptar o descartar recomendaciones IA' },
+  { clave: 'reporte:read', descripcion: 'Consultar reportes ejecutivos, kárdex cronológico y métricas' },
+] as const;
+
+export const SYSTEM_ROLES = [
+  {
+    nombre: 'PROPIETARIO',
+    descripcion: 'Dueño del negocio con acceso total',
+    nivelJerarquia: 100,
+    permisos: SYSTEM_PERMISSIONS.map((p) => p.clave),
+  },
+  {
+    nombre: 'ADMINISTRADOR',
+    descripcion: 'Administrador general del negocio',
+    nivelJerarquia: 80,
+    permisos: SYSTEM_PERMISSIONS.map((p) => p.clave).filter((c) => c !== 'negocio:write'),
+  },
+  {
+    nombre: 'SUPERVISOR_INVENTARIO',
+    descripcion: 'Responsable de almacenes, kárdex, cierres y reposición IA',
+    nivelJerarquia: 50,
+    permisos: [
+      'negocio:read',
+      'sucursal:read',
+      'almacen:read',
+      'almacen:write',
+      'catalogo:read',
+      'catalogo:write',
+      'proveedor:read',
+      'proveedor:write',
+      'inventario:read',
+      'inventario:write',
+      'inventario:approve',
+      'inventario:cancel',
+      'cierre:read',
+      'cierre:execute',
+      'ia:read',
+      'ia:decide',
+      'reporte:read',
+    ],
+  },
+  {
+    nombre: 'VENDEDOR',
+    descripcion: 'Operador de punto de venta',
+    nivelJerarquia: 20,
+    permisos: ['catalogo:read', 'inventario:read', 'venta:read', 'venta:create'],
+  },
+  {
+    nombre: 'OPERARIO_ALMACEN',
+    descripcion: 'Operario de piso, recepción y traslados internos',
+    nivelJerarquia: 10,
+    permisos: ['almacen:read', 'catalogo:read', 'inventario:read', 'inventario:write'],
+  },
+] as const;
+
+export const DEFAULT_PAYMENT_METHODS = ['EFECTIVO', 'TARJETA', 'TRANSFERENCIA', 'YAPE_PLIN'];
+
+export const DEFAULT_GLOBAL_UNITS = [
+  { nombre: 'Unidad', simbolo: 'UND' },
+  { nombre: 'Kilogramo', simbolo: 'KG' },
+  { nombre: 'Litro', simbolo: 'L' },
+  { nombre: 'Caja', simbolo: 'CAJ' },
+  { nombre: 'Paquete', simbolo: 'PAQ' },
+  { nombre: 'Metro', simbolo: 'M' },
+];
+

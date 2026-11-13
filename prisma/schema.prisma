@@ -1,0 +1,567 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model almacen {
+  id                                                String                       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  sucursal_id                                       String                       @db.Char(36)
+  nombre                                            String                       @db.VarChar(100)
+  tipo                                              almacen_tipo                 @default(PRINCIPAL)
+  descripcion                                       String?                      @db.VarChar(255)
+  activo                                            Boolean?                     @default(true)
+  created_at                                        DateTime?                    @default(now()) @db.Timestamp(0)
+  deleted_at                                        DateTime?                    @db.Timestamp(0)
+  sucursal                                          sucursal                     @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction, map: "almacen_ibfk_1")
+  cierre_inventario_periodo                         cierre_inventario_periodo[]
+  movimiento_movimiento_almacen_origen_idToalmacen  movimiento[]                 @relation("movimiento_almacen_origen_idToalmacen")
+  movimiento_movimiento_almacen_destino_idToalmacen movimiento[]                 @relation("movimiento_almacen_destino_idToalmacen")
+  politica_reposicion                               politica_reposicion[]
+  producto_ubicacion_almacen                        producto_ubicacion_almacen[]
+  stock_almacen                                     stock_almacen[]
+  venta                                             venta[]
+
+  @@index([sucursal_id], map: "sucursal_id")
+}
+
+model categoria {
+  id         String     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id String     @db.Char(36)
+  nombre     String     @db.VarChar(100)
+  activo     Boolean?   @default(true)
+  deleted_at DateTime?  @db.Timestamp(0)
+  negocio    negocio    @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "categoria_ibfk_1")
+  producto   producto[]
+
+  @@index([negocio_id], map: "negocio_id")
+}
+
+model cierre_inventario_detalle {
+  id                        String                    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  cierre_periodo_id         String                    @db.Char(36)
+  producto_id               String                    @db.Char(36)
+  lote_id                   String?                   @db.Char(36)
+  cantidad_inicial          Int
+  cantidad_entradas         Int                       @default(0)
+  cantidad_salidas          Int                       @default(0)
+  cantidad_final            Int
+  costo_unitario_corte      Decimal                   @db.Decimal(12, 4)
+  valor_total_linea         Decimal                   @db.Decimal(14, 4)
+  cierre_inventario_periodo cierre_inventario_periodo @relation(fields: [cierre_periodo_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "cierre_inventario_detalle_ibfk_1")
+  producto                  producto                  @relation(fields: [producto_id], references: [id], onUpdate: NoAction, map: "cierre_inventario_detalle_ibfk_2")
+  producto_lote             producto_lote?            @relation(fields: [lote_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cierre_inventario_detalle_ibfk_3")
+
+  @@index([cierre_periodo_id], map: "cierre_periodo_id")
+  @@index([producto_id, cierre_periodo_id], map: "idx_cierre_det_prod")
+  @@index([lote_id], map: "lote_id")
+}
+
+model cierre_inventario_periodo {
+  id                        String                                  @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                String                                  @db.Char(36)
+  sucursal_id               String                                  @db.Char(36)
+  almacen_id                String                                  @db.Char(36)
+  fecha_cierre              DateTime                                @db.Date
+  tipo_periodo              cierre_inventario_periodo_tipo_periodo? @default(DIARIO)
+  total_unidades_cerradas   Int                                     @default(0)
+  valor_total_inventario    Decimal                                 @default(0.0000) @db.Decimal(14, 4)
+  ejecutado_por_usuario_id  String?                                 @db.Char(36)
+  observaciones             String?                                 @db.VarChar(255)
+  created_at                DateTime?                               @default(now()) @db.Timestamp(0)
+  cierre_inventario_detalle cierre_inventario_detalle[]
+  negocio                   negocio                                 @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "cierre_inventario_periodo_ibfk_1")
+  sucursal                  sucursal                                @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction, map: "cierre_inventario_periodo_ibfk_2")
+  almacen                   almacen                                 @relation(fields: [almacen_id], references: [id], onUpdate: NoAction, map: "cierre_inventario_periodo_ibfk_3")
+  usuario                   usuario?                                @relation(fields: [ejecutado_por_usuario_id], references: [id], onUpdate: NoAction, map: "cierre_inventario_periodo_ibfk_4")
+
+  @@unique([almacen_id, fecha_cierre, tipo_periodo], map: "uq_cierre_almacen_fecha")
+  @@index([ejecutado_por_usuario_id], map: "ejecutado_por_usuario_id")
+  @@index([negocio_id, fecha_cierre], map: "idx_cierre_timeline")
+  @@index([sucursal_id], map: "sucursal_id")
+}
+
+model clasificacion_abc {
+  id                       String                  @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id               String                  @db.Char(36)
+  producto_id              String                  @db.Char(36)
+  periodo_inicio           DateTime                @db.Date
+  periodo_fin              DateTime                @db.Date
+  clase                    clasificacion_abc_clase
+  valor_consumo            Decimal                 @db.Decimal(14, 4)
+  porcentaje_participacion Decimal                 @db.Decimal(5, 2)
+  calculado_el             DateTime?               @default(now()) @db.Timestamp(0)
+  negocio                  negocio                 @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "clasificacion_abc_ibfk_1")
+  producto                 producto                @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "clasificacion_abc_ibfk_2")
+
+  @@index([negocio_id], map: "negocio_id")
+  @@index([producto_id], map: "producto_id")
+}
+
+model configuracion_negocio {
+  negocio_id              String    @id @db.Char(36)
+  usa_lotes               Boolean?  @default(true)
+  usa_multi_almacen       Boolean?  @default(true)
+  dias_alerta_vencimiento Int?      @default(30)
+  permite_stock_negativo  Boolean?  @default(false)
+  updated_at              DateTime? @default(now()) @db.Timestamp(0)
+  negocio                 negocio   @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "configuracion_negocio_ibfk_1")
+}
+
+model detalle_movimiento {
+  id                 String         @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  movimiento_id      String         @db.Char(36)
+  producto_id        String         @db.Char(36)
+  lote_id            String?        @db.Char(36)
+  cantidad           Int
+  costo_unitario     Decimal        @default(0.0000) @db.Decimal(12, 4)
+  descuento_unitario Decimal        @default(0.0000) @db.Decimal(12, 4)
+  movimiento         movimiento     @relation(fields: [movimiento_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "detalle_movimiento_ibfk_1")
+  producto           producto       @relation(fields: [producto_id], references: [id], onUpdate: NoAction, map: "detalle_movimiento_ibfk_2")
+  producto_lote      producto_lote? @relation(fields: [lote_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "detalle_movimiento_ibfk_3")
+
+  @@index([lote_id], map: "lote_id")
+  @@index([movimiento_id], map: "movimiento_id")
+  @@index([producto_id], map: "producto_id")
+}
+
+model detalle_venta {
+  id              String         @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  venta_id        String         @db.Char(36)
+  producto_id     String         @db.Char(36)
+  lote_id         String?        @db.Char(36)
+  cantidad        Int
+  precio_unitario Decimal        @db.Decimal(12, 2)
+  descuento       Decimal?       @default(0.00) @db.Decimal(12, 2)
+  subtotal_linea  Decimal        @db.Decimal(12, 2)
+  venta           venta          @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "detalle_venta_ibfk_1")
+  producto        producto       @relation(fields: [producto_id], references: [id], onUpdate: NoAction, map: "detalle_venta_ibfk_2")
+  producto_lote   producto_lote? @relation(fields: [lote_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "detalle_venta_ibfk_3")
+
+  @@index([lote_id], map: "lote_id")
+  @@index([producto_id], map: "producto_id")
+  @@index([venta_id], map: "venta_id")
+}
+
+model metodo_pago {
+  id         String       @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  nombre     String       @db.VarChar(50)
+  activo     Boolean?     @default(true)
+  pago_venta pago_venta[]
+}
+
+model movimiento {
+  id                                             String               @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                                     String               @db.Char(36)
+  sucursal_id                                    String               @db.Char(36)
+  almacen_origen_id                              String?              @db.Char(36)
+  almacen_destino_id                             String?              @db.Char(36)
+  proveedor_id                                   String?              @db.Char(36)
+  usuario_creador_id                             String               @db.Char(36)
+  tipo                                           movimiento_tipo
+  estado                                         movimiento_estado?   @default(BORRADOR)
+  motivo                                         String               @db.VarChar(255)
+  codigo_transferencia                           String?              @db.VarChar(50)
+  movimiento_reverso_id                          String?              @db.Char(36)
+  fecha_registro                                 DateTime?            @default(now()) @db.Timestamp(0)
+  fecha_aplicacion                               DateTime?            @db.Timestamp(0)
+  detalle_movimiento                             detalle_movimiento[]
+  negocio                                        negocio              @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "movimiento_ibfk_1")
+  sucursal                                       sucursal             @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction, map: "movimiento_ibfk_2")
+  almacen_movimiento_almacen_origen_idToalmacen  almacen?             @relation("movimiento_almacen_origen_idToalmacen", fields: [almacen_origen_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "movimiento_ibfk_3")
+  almacen_movimiento_almacen_destino_idToalmacen almacen?             @relation("movimiento_almacen_destino_idToalmacen", fields: [almacen_destino_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "movimiento_ibfk_4")
+  proveedor                                      proveedor?           @relation(fields: [proveedor_id], references: [id], onUpdate: NoAction, map: "movimiento_ibfk_5")
+  usuario                                        usuario              @relation(fields: [usuario_creador_id], references: [id], onUpdate: NoAction, map: "movimiento_ibfk_6")
+  movimiento                                     movimiento?          @relation("movimientoTomovimiento", fields: [movimiento_reverso_id], references: [id], onUpdate: NoAction, map: "movimiento_ibfk_7")
+  other_movimiento                               movimiento[]         @relation("movimientoTomovimiento")
+  venta                                          venta?
+
+  @@index([almacen_destino_id], map: "almacen_destino_id")
+  @@index([almacen_origen_id], map: "almacen_origen_id")
+  @@index([negocio_id, sucursal_id, fecha_registro], map: "idx_movimiento_timeline")
+  @@index([movimiento_reverso_id], map: "movimiento_reverso_id")
+  @@index([proveedor_id], map: "proveedor_id")
+  @@index([sucursal_id], map: "sucursal_id")
+  @@index([usuario_creador_id], map: "usuario_creador_id")
+}
+
+model negocio {
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  nombre                      String                        @db.VarChar(150)
+  ruc                         String                        @unique(map: "ruc") @db.VarChar(20)
+  correo_contacto             String?                       @db.VarChar(120)
+  telefono                    String?                       @db.VarChar(20)
+  activo                      Boolean?                      @default(true)
+  created_at                  DateTime?                     @default(now()) @db.Timestamp(0)
+  updated_at                  DateTime?                     @default(now()) @db.Timestamp(0)
+  deleted_at                  DateTime?                     @db.Timestamp(0)
+  categoria                   categoria[]
+  cierre_inventario_periodo   cierre_inventario_periodo[]
+  clasificacion_abc           clasificacion_abc[]
+  configuracion_negocio       configuracion_negocio?
+  movimiento                  movimiento[]
+  producto                    producto[]
+  proveedor                   proveedor[]
+  recomendacion_reposicion_ia recomendacion_reposicion_ia[]
+  rol                         rol[]
+  sucursal                    sucursal[]
+  unidad_medida               unidad_medida[]
+  usuario_negocio             usuario_negocio[]
+  venta                       venta[]
+}
+
+model pago_venta {
+  id             String      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  venta_id       String      @db.Char(36)
+  metodo_pago_id String      @db.Char(36)
+  monto          Decimal     @db.Decimal(12, 2)
+  referencia     String?     @db.VarChar(100)
+  fecha_pago     DateTime?   @default(now()) @db.Timestamp(0)
+  venta          venta       @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "pago_venta_ibfk_1")
+  metodo_pago    metodo_pago @relation(fields: [metodo_pago_id], references: [id], onUpdate: NoAction, map: "pago_venta_ibfk_2")
+
+  @@index([metodo_pago_id], map: "metodo_pago_id")
+  @@index([venta_id], map: "venta_id")
+}
+
+model permiso {
+  id          String        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  clave       String        @unique(map: "clave") @db.VarChar(80)
+  descripcion String        @db.VarChar(200)
+  rol_permiso rol_permiso[]
+}
+
+model politica_reposicion {
+  id              String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  producto_id     String    @db.Char(36)
+  almacen_id      String    @db.Char(36)
+  stock_seguridad Int?      @default(0)
+  punto_reorden   Int?      @default(0)
+  stock_maximo    Int?      @default(0)
+  calculado_el    DateTime? @default(now()) @db.Timestamp(0)
+  producto        producto  @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "politica_reposicion_ibfk_1")
+  almacen         almacen   @relation(fields: [almacen_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "politica_reposicion_ibfk_2")
+
+  @@unique([producto_id, almacen_id], map: "uq_politica_prod_almacen")
+  @@index([almacen_id], map: "almacen_id")
+}
+
+model producto {
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                  String                        @db.Char(36)
+  categoria_id                String?                       @db.Char(36)
+  unidad_medida_id            String?                       @db.Char(36)
+  sku                         String?                       @db.VarChar(64)
+  codigo_barras               String?                       @db.VarChar(64)
+  nombre                      String                        @db.VarChar(200)
+  descripcion                 String?                       @db.Text
+  costo_promedio              Decimal?                      @default(0.0000) @db.Decimal(12, 4)
+  precio_venta_base           Decimal                       @db.Decimal(12, 2)
+  maneja_lotes                Boolean?                      @default(false)
+  activo                      Boolean?                      @default(true)
+  created_at                  DateTime?                     @default(now()) @db.Timestamp(0)
+  updated_at                  DateTime?                     @default(now()) @db.Timestamp(0)
+  deleted_at                  DateTime?                     @db.Timestamp(0)
+  cierre_inventario_detalle   cierre_inventario_detalle[]
+  clasificacion_abc           clasificacion_abc[]
+  detalle_movimiento          detalle_movimiento[]
+  detalle_venta               detalle_venta[]
+  politica_reposicion         politica_reposicion[]
+  negocio                     negocio                       @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "producto_ibfk_1")
+  categoria                   categoria?                    @relation(fields: [categoria_id], references: [id], onUpdate: NoAction, map: "producto_ibfk_2")
+  unidad_medida               unidad_medida?                @relation(fields: [unidad_medida_id], references: [id], onUpdate: NoAction, map: "producto_ibfk_3")
+  producto_lote               producto_lote[]
+  producto_proveedor          producto_proveedor[]
+  producto_ubicacion_almacen  producto_ubicacion_almacen[]
+  recomendacion_reposicion_ia recomendacion_reposicion_ia[]
+  stock_almacen               stock_almacen[]
+
+  @@unique([negocio_id, sku], map: "uq_prod_negocio_sku")
+  @@index([categoria_id], map: "categoria_id")
+  @@index([negocio_id, activo, codigo_barras, sku], map: "idx_prod_lookup")
+  @@index([unidad_medida_id], map: "unidad_medida_id")
+}
+
+model producto_lote {
+  id                        String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  producto_id               String                      @db.Char(36)
+  codigo_lote               String                      @db.VarChar(60)
+  fecha_fabricacion         DateTime?                   @db.Date
+  fecha_vencimiento         DateTime                    @db.Date
+  estado                    producto_lote_estado?       @default(DISPONIBLE)
+  created_at                DateTime?                   @default(now()) @db.Timestamp(0)
+  cierre_inventario_detalle cierre_inventario_detalle[]
+  detalle_movimiento        detalle_movimiento[]
+  detalle_venta             detalle_venta[]
+  producto                  producto                    @relation(fields: [producto_id], references: [id], onUpdate: NoAction, map: "producto_lote_ibfk_1")
+  stock_almacen             stock_almacen[]
+
+  @@unique([producto_id, codigo_lote], map: "uq_prod_lote_cod")
+  @@index([fecha_vencimiento, estado], map: "idx_lote_vencimiento_alertas")
+}
+
+model producto_proveedor {
+  id               String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  producto_id      String    @db.Char(36)
+  proveedor_id     String    @db.Char(36)
+  codigo_proveedor String?   @db.VarChar(64)
+  costo_compra     Decimal   @db.Decimal(12, 4)
+  lead_time_dias   Int?      @default(3)
+  es_preferente    Boolean?  @default(false)
+  updated_at       DateTime? @default(now()) @db.Timestamp(0)
+  producto         producto  @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "producto_proveedor_ibfk_1")
+  proveedor        proveedor @relation(fields: [proveedor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "producto_proveedor_ibfk_2")
+
+  @@unique([producto_id, proveedor_id], map: "uq_prod_prov")
+  @@index([proveedor_id], map: "proveedor_id")
+}
+
+model producto_ubicacion_almacen {
+  id           String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  producto_id  String    @db.Char(36)
+  almacen_id   String    @db.Char(36)
+  pasillo      String?   @db.VarChar(20)
+  estante      String?   @db.VarChar(20)
+  coordenada_x Int?      @default(0)
+  coordenada_y Int?      @default(0)
+  zona_rotulo  String?   @db.VarChar(80)
+  created_at   DateTime? @default(now()) @db.Timestamp(0)
+  producto     producto  @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "producto_ubicacion_almacen_ibfk_1")
+  almacen      almacen   @relation(fields: [almacen_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "producto_ubicacion_almacen_ibfk_2")
+
+  @@unique([producto_id, almacen_id], map: "uq_prod_ubicacion")
+  @@index([almacen_id], map: "almacen_id")
+}
+
+model proveedor {
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                  String                        @db.Char(36)
+  razon_social                String                        @db.VarChar(150)
+  ruc                         String                        @db.VarChar(20)
+  telefono                    String?                       @db.VarChar(20)
+  correo                      String?                       @db.VarChar(120)
+  lead_time_promedio_dias     Int?                          @default(3)
+  activo                      Boolean?                      @default(true)
+  deleted_at                  DateTime?                     @db.Timestamp(0)
+  movimiento                  movimiento[]
+  producto_proveedor          producto_proveedor[]
+  negocio                     negocio                       @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "proveedor_ibfk_1")
+  recomendacion_reposicion_ia recomendacion_reposicion_ia[]
+
+  @@index([negocio_id], map: "negocio_id")
+}
+
+model recomendacion_reposicion_ia {
+  id                               String                              @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                       String                              @db.Char(36)
+  sucursal_id                      String                              @db.Char(36)
+  producto_id                      String                              @db.Char(36)
+  proveedor_sugerido_id            String?                             @db.Char(36)
+  stock_actual_evaluado            Int
+  demanda_proyectada_proximos_dias Int
+  cantidad_sugerida_comprar        Int
+  confianza_modelo                 Decimal?                            @default(0.85) @db.Decimal(5, 2)
+  motivo_explicacion               String                              @db.Text
+  estado                           recomendacion_reposicion_ia_estado? @default(PENDIENTE)
+  fecha_generacion                 DateTime?                           @default(now()) @db.Timestamp(0)
+  fecha_respuesta                  DateTime?                           @db.Timestamp(0)
+  negocio                          negocio                             @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "recomendacion_reposicion_ia_ibfk_1")
+  sucursal                         sucursal                            @relation(fields: [sucursal_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "recomendacion_reposicion_ia_ibfk_2")
+  producto                         producto                            @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "recomendacion_reposicion_ia_ibfk_3")
+  proveedor                        proveedor?                          @relation(fields: [proveedor_sugerido_id], references: [id], onUpdate: NoAction, map: "recomendacion_reposicion_ia_ibfk_4")
+
+  @@index([negocio_id], map: "negocio_id")
+  @@index([producto_id], map: "producto_id")
+  @@index([proveedor_sugerido_id], map: "proveedor_sugerido_id")
+  @@index([sucursal_id], map: "sucursal_id")
+}
+
+model rol {
+  id              String            @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id      String?           @db.Char(36)
+  nombre          String            @db.VarChar(50)
+  descripcion     String?           @db.VarChar(200)
+  nivel_jerarquia Int?              @default(1)
+  negocio         negocio?          @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "rol_ibfk_1")
+  rol_permiso     rol_permiso[]
+  usuario_negocio usuario_negocio[]
+
+  @@index([negocio_id], map: "negocio_id")
+}
+
+model rol_permiso {
+  rol_id     String  @db.Char(36)
+  permiso_id String  @db.Char(36)
+  rol        rol     @relation(fields: [rol_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "rol_permiso_ibfk_1")
+  permiso    permiso @relation(fields: [permiso_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "rol_permiso_ibfk_2")
+
+  @@id([rol_id, permiso_id])
+  @@index([permiso_id], map: "permiso_id")
+}
+
+model stock_almacen {
+  id                 String         @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  almacen_id         String         @db.Char(36)
+  producto_id        String         @db.Char(36)
+  lote_id            String?        @db.Char(36)
+  codigo_existencia  String?        @unique(map: "uq_stock_codigo_unico") @db.VarChar(80)
+  cantidad_actual    Int            @default(0)
+  cantidad_reservada Int            @default(0)
+  updated_at         DateTime?      @default(now()) @db.Timestamp(0)
+  almacen            almacen        @relation(fields: [almacen_id], references: [id], onUpdate: NoAction, map: "stock_almacen_ibfk_1")
+  producto           producto       @relation(fields: [producto_id], references: [id], onUpdate: NoAction, map: "stock_almacen_ibfk_2")
+  producto_lote      producto_lote? @relation(fields: [lote_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "stock_almacen_ibfk_3")
+
+  @@unique([almacen_id, producto_id, lote_id], map: "uq_stock_registro")
+  @@index([lote_id], map: "lote_id")
+  @@index([producto_id], map: "producto_id")
+}
+
+model sucursal {
+  id                          String                        @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id                  String                        @db.Char(36)
+  nombre                      String                        @db.VarChar(100)
+  direccion                   String?                       @db.VarChar(255)
+  ciudad                      String?                       @db.VarChar(80)
+  telefono                    String?                       @db.VarChar(20)
+  activo                      Boolean?                      @default(true)
+  created_at                  DateTime?                     @default(now()) @db.Timestamp(0)
+  deleted_at                  DateTime?                     @db.Timestamp(0)
+  almacen                     almacen[]
+  cierre_inventario_periodo   cierre_inventario_periodo[]
+  movimiento                  movimiento[]
+  recomendacion_reposicion_ia recomendacion_reposicion_ia[]
+  negocio                     negocio                       @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "sucursal_ibfk_1")
+  venta                       venta[]
+
+  @@index([negocio_id], map: "negocio_id")
+}
+
+model unidad_medida {
+  id         String     @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id String?    @db.Char(36)
+  nombre     String     @db.VarChar(50)
+  simbolo    String     @db.VarChar(10)
+  producto   producto[]
+  negocio    negocio?   @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "unidad_medida_ibfk_1")
+
+  @@index([negocio_id], map: "negocio_id")
+}
+
+model usuario {
+  id                                                               String                      @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  nombre                                                           String                      @db.VarChar(120)
+  correo                                                           String                      @unique(map: "correo") @db.VarChar(120)
+  password_hash                                                    String                      @db.VarChar(255)
+  activo                                                           Boolean?                    @default(true)
+  created_at                                                       DateTime?                   @default(now()) @db.Timestamp(0)
+  updated_at                                                       DateTime?                   @default(now()) @db.Timestamp(0)
+  deleted_at                                                       DateTime?                   @db.Timestamp(0)
+  cierre_inventario_periodo                                        cierre_inventario_periodo[]
+  movimiento                                                       movimiento[]
+  usuario_negocio_usuario_negocio_usuario_idTousuario              usuario_negocio[]           @relation("usuario_negocio_usuario_idTousuario")
+  usuario_negocio_usuario_negocio_invitado_por_usuario_idTousuario usuario_negocio[]           @relation("usuario_negocio_invitado_por_usuario_idTousuario")
+  venta                                                            venta[]
+}
+
+model usuario_negocio {
+  id                                                       String    @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  usuario_id                                               String    @db.Char(36)
+  negocio_id                                               String    @db.Char(36)
+  rol_id                                                   String    @db.Char(36)
+  invitado_por_usuario_id                                  String?   @db.Char(36)
+  activo                                                   Boolean?  @default(true)
+  created_at                                               DateTime? @default(now()) @db.Timestamp(0)
+  usuario_usuario_negocio_usuario_idTousuario              usuario   @relation("usuario_negocio_usuario_idTousuario", fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "usuario_negocio_ibfk_1")
+  negocio                                                  negocio   @relation(fields: [negocio_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "usuario_negocio_ibfk_2")
+  rol                                                      rol       @relation(fields: [rol_id], references: [id], onUpdate: NoAction, map: "usuario_negocio_ibfk_3")
+  usuario_usuario_negocio_invitado_por_usuario_idTousuario usuario?  @relation("usuario_negocio_invitado_por_usuario_idTousuario", fields: [invitado_por_usuario_id], references: [id], onUpdate: NoAction, map: "usuario_negocio_ibfk_4")
+
+  @@unique([usuario_id, negocio_id], map: "uq_usuario_negocio")
+  @@index([invitado_por_usuario_id], map: "invitado_por_usuario_id")
+  @@index([negocio_id], map: "negocio_id")
+  @@index([rol_id], map: "rol_id")
+}
+
+model venta {
+  id                  String          @id @default(dbgenerated("(uuid())")) @db.Char(36)
+  negocio_id          String          @db.Char(36)
+  sucursal_id         String          @db.Char(36)
+  almacen_despacho_id String          @db.Char(36)
+  movimiento_id       String?         @unique(map: "movimiento_id") @db.Char(36)
+  usuario_id          String          @db.Char(36)
+  numero_comprobante  String          @db.VarChar(50)
+  subtotal            Decimal         @db.Decimal(12, 2)
+  descuento_global    Decimal?        @default(0.00) @db.Decimal(12, 2)
+  impuesto            Decimal         @db.Decimal(12, 2)
+  total               Decimal         @db.Decimal(12, 2)
+  estado              venta_estado?   @default(EMITIDA)
+  fecha_venta         DateTime?       @default(now()) @db.Timestamp(0)
+  detalle_venta       detalle_venta[]
+  pago_venta          pago_venta[]
+  negocio             negocio         @relation(fields: [negocio_id], references: [id], onUpdate: NoAction, map: "venta_ibfk_1")
+  sucursal            sucursal        @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction, map: "venta_ibfk_2")
+  almacen             almacen         @relation(fields: [almacen_despacho_id], references: [id], onUpdate: NoAction, map: "venta_ibfk_3")
+  movimiento          movimiento?     @relation(fields: [movimiento_id], references: [id], onUpdate: NoAction, map: "venta_ibfk_4")
+  usuario             usuario         @relation(fields: [usuario_id], references: [id], onUpdate: NoAction, map: "venta_ibfk_5")
+
+  @@index([almacen_despacho_id], map: "almacen_despacho_id")
+  @@index([negocio_id, sucursal_id, fecha_venta], map: "idx_venta_timeline")
+  @@index([sucursal_id], map: "sucursal_id")
+  @@index([usuario_id], map: "usuario_id")
+}
+
+enum almacen_tipo {
+  PRINCIPAL
+  EXPOSICION
+  RECEPCION
+  MERMAS_CUARENTENA
+}
+
+enum cierre_inventario_periodo_tipo_periodo {
+  DIARIO
+  MENSUAL
+}
+
+enum clasificacion_abc_clase {
+  A
+  B
+  C
+}
+
+enum producto_lote_estado {
+  DISPONIBLE
+  POR_VENCER
+  VENCIDO
+  CUARENTENA
+  AGOTADO
+}
+
+enum movimiento_tipo {
+  ENTRADA_COMPRA
+  TRASLADO_INTERNO
+  SALIDA_VENTA
+  SALIDA_MERMA
+  AJUSTE_INVENTARIO
+}
+
+enum movimiento_estado {
+  BORRADOR
+  APROBADO
+  COMPLETADO
+  ANULADO
+}
+
+enum recomendacion_reposicion_ia_estado {
+  PENDIENTE
+  ACEPTADA
+  DESCARTADA
+}
+
+enum venta_estado {
+  EMITIDA
+  ANULADA
+}
