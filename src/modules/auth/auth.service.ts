@@ -115,10 +115,10 @@ export class AuthService {
           },
         },
         rol: {
-          select: {
-            id: true,
-            nombre: true,
-            nivel_jerarquia: true,
+          include: {
+            rol_permiso: {
+              include: { permiso: true },
+            },
           },
         },
       },
@@ -129,7 +129,12 @@ export class AuthService {
       negocioId: m.negocio.id,
       nombre: m.negocio.nombre,
       ruc: m.negocio.ruc,
-      rol: m.rol,
+      rol: {
+        id: m.rol.id,
+        nombre: m.rol.nombre,
+        nivelJerarquia: m.rol.nivel_jerarquia ?? 1,
+        permisos: m.rol.rol_permiso.map((rp) => rp.permiso.clave),
+      },
       configuracion: m.negocio.configuracion_negocio,
     }));
   }
