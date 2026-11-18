@@ -61,6 +61,7 @@ export class SeedService implements OnModuleInit {
     for (const roleDef of SYSTEM_ROLES) {
       let role = await this.prisma.rol.findFirst({
         where: { negocio_id: null, nombre: roleDef.nombre },
+        orderBy: { id: 'asc' },
       });
 
       if (!role) {
@@ -74,12 +75,49 @@ export class SeedService implements OnModuleInit {
         });
       }
 
+      role = await this.prisma.rol.update({
+        where: { id: role.id },
+        data: {
+          descripcion: roleDef.descripcion,
+          nivel_jerarquia: roleDef.nivelJerarquia,
+        },
+      });
+
+      const duplicateRoles = await this.prisma.rol.findMany({
+        where: {
+          id: { not: role.id },
+          nombre: roleDef.nombre,
+        },
+        select: { id: true },
+      });
+
+      if (duplicateRoles.length > 0) {
+        await this.prisma.$transaction(async (tx) => {
+          for (const duplicate of duplicateRoles) {
+            await tx.usuario_negocio.updateMany({
+              where: { rol_id: duplicate.id },
+              data: { rol_id: role.id },
+            });
+            await tx.rol.delete({ where: { id: duplicate.id } });
+          }
+        });
+        this.logger.warn(
+          `Consolidated ${duplicateRoles.length} duplicate role(s) named ${roleDef.nombre}`,
+        );
+      }
+
       const rolePerms = roleDef.permisos
         .map((clave) => permByKey.get(clave))
         .filter((id): id is string => Boolean(id))
         .map((permiso_id) => ({ rol_id: role.id, permiso_id }));
 
       if (rolePerms.length > 0) {
+        await this.prisma.rol_permiso.deleteMany({
+          where: {
+            rol_id: role.id,
+            permiso_id: { notIn: rolePerms.map((item) => item.permiso_id) },
+          },
+        });
         await this.prisma.rol_permiso.createMany({
           data: rolePerms,
           skipDuplicates: true,

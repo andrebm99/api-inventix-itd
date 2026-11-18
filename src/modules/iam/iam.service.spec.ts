@@ -58,4 +58,28 @@ describe('IamService role delegation', () => {
     })).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('allows a proprietor to assign the proprietor role', async () => {
+    const reachedTransaction = new Error('transaction reached');
+    const prisma = {
+      rol: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'owner-role',
+          nivel_jerarquia: 100,
+          rol_permiso: [{ permiso: { clave: 'negocio:write' } }],
+        }),
+      },
+      $transaction: vi.fn().mockRejectedValue(reachedTransaction),
+    };
+    const service = new IamService(prisma as never);
+
+    await expect(service.inviteMember(tenant({
+      rol: { id: 'owner-role', nombre: 'PROPIETARIO', nivelJerarquia: 100 },
+      permisos: [],
+    }), {
+      correo: 'copropietario@inventix.test',
+      rolId: 'owner-role',
+    })).rejects.toBe(reachedTransaction);
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
 });

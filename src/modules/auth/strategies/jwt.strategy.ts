@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../../core/database/prisma.service.js';
 import type { AuthenticatedUser, JwtPayload } from '../../../core/types/auth.types.js';
 
+/* Autentica solicitudes mediante un JWT Bearer y verifica que el usuario siga activo. */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -18,6 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
+  /* Busca al usuario del token y rechaza cuentas inexistentes, eliminadas o inactivas. */
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const usuario = await this.prisma.usuario.findFirst({
       where: {

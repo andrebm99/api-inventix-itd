@@ -13,6 +13,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  /** Registra un usuario, cifra su contraseña y genera su token de acceso. */
   async register(dto: RegisterDto) {
     const email = dto.correo.trim().toLowerCase();
     const existing = await this.prisma.usuario.findFirst({
@@ -45,6 +46,7 @@ export class AuthService {
     };
   }
 
+  /** Valida las credenciales y devuelve el token, el usuario y sus negocios. */
   async login(dto: LoginDto) {
     const email = dto.correo.trim().toLowerCase();
     const usuario = await this.prisma.usuario.findFirst({
@@ -83,6 +85,7 @@ export class AuthService {
     };
   }
 
+  /** Obtiene el perfil del usuario y los negocios a los que pertenece. */
   async getProfile(usuarioId: string) {
     const usuario = await this.prisma.usuario.findFirstOrThrow({
       where: { id: usuarioId, deleted_at: null },
@@ -98,6 +101,7 @@ export class AuthService {
     return { usuario, negocios };
   }
 
+  /** Lista los negocios activos del usuario con su rol y permisos. */
   private async getUserBusinesses(usuarioId: string) {
     const memberships = await this.prisma.usuario_negocio.findMany({
       where: {
@@ -139,6 +143,7 @@ export class AuthService {
     }));
   }
 
+  /** Genera un JWT con los datos básicos del usuario. */
   private signToken(usuario: { id: string; correo: string; nombre: string }): Promise<string> {
     const payload: JwtPayload = {
       sub: usuario.id,

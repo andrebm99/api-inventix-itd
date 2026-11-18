@@ -19,12 +19,14 @@ import type {
 export class IamService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Lista todos los permisos disponibles ordenados por clave. */
   async listPermissions() {
     return this.prisma.permiso.findMany({
       orderBy: { clave: 'asc' },
     });
   }
 
+  /** Lista los roles globales y propios del negocio con sus permisos. */
   async listRoles(negocioId: string) {
     const roles = await this.prisma.rol.findMany({
       where: {
@@ -40,7 +42,16 @@ export class IamService {
       orderBy: [{ nivel_jerarquia: 'desc' }, { nombre: 'asc' }],
     });
 
-    return roles.map((r) => ({
+    const uniqueRoles = new Map<string, (typeof roles)[number]>();
+    for (const role of roles) {
+      const key = role.nombre.trim().toUpperCase();
+      const current = uniqueRoles.get(key);
+      if (!current || (role.negocio_id === null && current.negocio_id !== null)) {
+        uniqueRoles.set(key, role);
+      }
+    }
+
+    return [...uniqueRoles.values()].map((r) => ({
       id: r.id,
       negocio_id: r.negocio_id,
       esGlobal: r.negocio_id === null,
@@ -51,6 +62,7 @@ export class IamService {
     }));
   }
 
+  /** Crea un rol del negocio respetando la jerarquía y permisos del usuario. */
   async createRole(tenant: TenantContext, dto: CreateRolDto) {
     this.assertHierarchy(
       tenant.rol.nivelJerarquia,
@@ -100,6 +112,7 @@ export class IamService {
     });
   }
 
+  /** Actualiza un rol propio del negocio si el usuario tiene autoridad suficiente. */
   async updateRole(tenant: TenantContext, rolId: string, dto: UpdateRolDto) {
     const role = await this.prisma.rol.findUnique({ where: { id: rolId } });
     if (!role) {
@@ -161,6 +174,7 @@ export class IamService {
     });
   }
 
+  /** Lista los miembros vigentes del negocio con su rol e invitador. */
   async listMembers(negocioId: string) {
     const members = await this.prisma.usuario_negocio.findMany({
       where: { negocio_id: negocioId },
@@ -203,6 +217,7 @@ export class IamService {
       }));
   }
 
+  /** Vincula un usuario al negocio o crea su cuenta y le asigna un rol. */
   async inviteMember(tenant: TenantContext, dto: InviteMemberDto) {
     const rol = await this.prisma.rol.findFirst({
       where: {
@@ -296,6 +311,7 @@ export class IamService {
     });
   }
 
+  /** Cambia el rol o estado de un miembro respetando la jerarquía del usuario. */
   async updateMember(
     tenant: TenantContext,
     membershipId: string,
@@ -358,6 +374,7 @@ export class IamService {
     });
   }
 
+  /** Verifica que el usuario pueda actuar sobre el nivel jerárquico indicado. */
   private assertHierarchy(
     callerLevel: number,
     targetLevel: number,
@@ -374,6 +391,7 @@ export class IamService {
     }
   }
 
+  /** Impide que el usuario delegue permisos que no posee. */
   private assertCanGrantPermissions(
     tenant: TenantContext,
     permissionKeys: string[],
