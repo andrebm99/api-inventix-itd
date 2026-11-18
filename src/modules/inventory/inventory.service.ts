@@ -14,7 +14,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import type { TenantContext } from '../../core/types/auth.types.js';
-import type { AnularMovimientoDto, CreateMovimientoDto } from './dto/inventory.dto.js';
+import type { AnularMovimientoDto, CreateMovimientoDto, UpdateMovimientoDto } from './dto/inventory.dto.js';
 
 export interface MovementLineInput {
   productoId: string;
@@ -185,11 +185,11 @@ export class InventoryService {
         almacen_movimiento_almacen_destino_idToalmacen: {
           select: { id: true, nombre: true, tipo: true },
         },
-        proveedor: { select: { id: true, razon_social: true } },
+        proveedor: { select: { id: true, razon_social: true, ruc: true } },
         usuario: { select: { id: true, nombre: true } },
         detalle_movimiento: {
           include: {
-            producto: { select: { id: true, nombre: true, sku: true } },
+            producto: { select: { id: true, nombre: true, sku: true, codigo_barras: true } },
             producto_lote: { select: { id: true, codigo_lote: true } },
           },
         },
@@ -271,7 +271,7 @@ export class InventoryService {
         almacenOrigenId: dto.almacenOrigenId ?? null,
         almacenDestinoId: dto.almacenDestinoId ?? null,
         proveedorId: dto.proveedorId ?? null,
-        motivo: dto.motivo.trim(),
+        motivo: dto.motivo?.trim() || `Movimiento de ${dto.tipo}`,
         codigoTransferencia: dto.codigoTransferencia?.trim() ?? null,
         detalles: dto.detalles,
       });
@@ -292,6 +292,152 @@ export class InventoryService {
     }
 
     return created;
+  }
+
+  async updateMovement(tenant: TenantContext, id: string, dto: UpdateMovimientoDto) {
+    const mov = await this.prisma.movimiento.findFirst({
+      where: { id, negocio_id: tenant.negocioId },
+      include: { detalle_movimiento: true },
+    });
+    if (!mov) {
+      throw new NotFoundException('Movimiento no encontrado');
+    }
+    if (mov.estado === movimiento_estado.ANULADO) {
+      throw new BadRequestException('No se puede editar un movimiento que ya está anulado');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const wasCompleted = mov.estado === movimiento_estado.COMPLETADO;
+      const allowNegative = tenant.config?.permite_stock_negativo ?? false;
+
+      // 1. Si estaba COMPLETADO, revertimos primero el stock previo antes de aplicar los nuevos valores
+      if (wasCompleted) {
+        for (const line of mov.detalle_movimiento) {
+          if (mov.almacen_destino_id) {
+            await this.adjustStockInTx(tx, {
+              almacenId: mov.almacen_destino_id,
+              productoId: line.producto_id,
+              loteId: line.lote_id,
+              delta: -line.cantidad,
+              allowNegative,
+            });
+          }
+          if (mov.almacen_origen_id) {
+            await this.adjustStockInTx(tx, {
+              almacenId: mov.almacen_origen_id,
+              productoId: line.producto_id,
+              loteId: line.lote_id,
+              delta: line.cantidad,
+              allowNegative: true,
+            });
+          }
+        }
+      }
+
+      const tipo = dto.tipo ?? mov.tipo;
+      const almacenOrigenId = dto.almacenOrigenId !== undefined ? dto.almacenOrigenId : mov.almacen_origen_id;
+      const almacenDestinoId = dto.almacenDestinoId !== undefined ? dto.almacenDestinoId : mov.almacen_destino_id;
+      this.validateMovementWarehousesShape(tipo, almacenOrigenId, almacenDestinoId);
+
+      let finalDetalles = mov.detalle_movimiento;
+      if (dto.detalles && dto.detalles.length > 0) {
+        await tx.detalle_movimiento.deleteMany({ where: { movimiento_id: id } });
+
+        const createdLines: any[] = [];
+        for (const line of dto.detalles) {
+          const producto = await tx.producto.findFirst({
+            where: { id: line.productoId, negocio_id: tenant.negocioId, deleted_at: null },
+          });
+          if (!producto) {
+            throw new NotFoundException(`Producto ${line.productoId} no encontrado`);
+          }
+
+          let resolvedLoteId: string | null = line.loteId ?? null;
+          const lotCode = (line.numeroLote || line.codigoLote)?.trim();
+
+          if (lotCode && line.fechaVencimiento) {
+            let existingLot = await tx.producto_lote.findFirst({
+              where: { producto_id: producto.id, codigo_lote: lotCode },
+            });
+            if (!existingLot) {
+              const expiration = new Date(
+                line.fechaVencimiento.length === 10
+                  ? `${line.fechaVencimiento}T12:00:00Z`
+                  : line.fechaVencimiento,
+              );
+              const fab = line.fechaFabricacion
+                ? new Date(
+                    line.fechaFabricacion.length === 10
+                      ? `${line.fechaFabricacion}T12:00:00Z`
+                      : line.fechaFabricacion,
+                  )
+                : null;
+              existingLot = await tx.producto_lote.create({
+                data: {
+                  producto_id: producto.id,
+                  codigo_lote: lotCode,
+                  fecha_vencimiento: expiration,
+                  fecha_fabricacion: fab,
+                  estado: producto_lote_estado.DISPONIBLE,
+                },
+              });
+            }
+            resolvedLoteId = existingLot.id;
+          }
+
+          const createdLine = await tx.detalle_movimiento.create({
+            data: {
+              movimiento_id: id,
+              producto_id: producto.id,
+              lote_id: resolvedLoteId,
+              cantidad: line.cantidad,
+              costo_unitario: line.costoUnitario ?? Number(producto.costo_promedio ?? 0),
+              descuento_unitario: line.descuentoUnitario ?? 0,
+            },
+          });
+          createdLines.push(createdLine);
+        }
+        finalDetalles = createdLines;
+      }
+
+      await tx.movimiento.update({
+        where: { id },
+        data: {
+          tipo,
+          almacen_origen_id: almacenOrigenId,
+          almacen_destino_id: almacenDestinoId,
+          proveedor_id: dto.proveedorId !== undefined ? dto.proveedorId : mov.proveedor_id,
+          motivo: dto.motivo ? dto.motivo.trim() : mov.motivo,
+          codigo_transferencia: dto.codigoTransferencia !== undefined ? dto.codigoTransferencia?.trim() ?? null : mov.codigo_transferencia,
+        },
+      });
+
+      // 2. Si estaba COMPLETADO, aplicamos el nuevo stock (recalculando el inventario)
+      if (wasCompleted) {
+        for (const line of finalDetalles) {
+          if (almacenDestinoId) {
+            await this.adjustStockInTx(tx, {
+              almacenId: almacenDestinoId,
+              productoId: line.producto_id,
+              loteId: line.lote_id,
+              delta: line.cantidad,
+              allowNegative: true,
+            });
+          }
+          if (almacenOrigenId) {
+            await this.adjustStockInTx(tx, {
+              almacenId: almacenOrigenId,
+              productoId: line.producto_id,
+              loteId: line.lote_id,
+              delta: -line.cantidad,
+              allowNegative,
+            });
+          }
+        }
+      }
+
+      return this.getMovement(tenant.negocioId, id);
+    });
   }
 
   async approveMovement(tenant: TenantContext, id: string) {
@@ -536,10 +682,40 @@ export class InventoryService {
             `El lote ${lote.codigo_lote} está en estado ${lote.estado} y no puede despacharse`,
           );
         }
-      } else if (resolvedLoteId) {
-        throw new BadRequestException(
-          `El producto "${producto.nombre}" no maneja lotes (loteId debe omitirse)`,
-        );
+      } else {
+        if (!resolvedLoteId && input.almacenOrigenId) {
+          const originLot = await tx.stock_almacen.findFirst({
+            where: {
+              almacen_id: input.almacenOrigenId,
+              producto_id: producto.id,
+              cantidad_actual: { gt: 0 },
+            },
+            orderBy: { cantidad_actual: 'desc' },
+          });
+          if (originLot?.lote_id) {
+            resolvedLoteId = originLot.lote_id;
+          }
+        }
+      }
+
+      if (input.almacenOrigenId) {
+        const originStockAgg = await tx.stock_almacen.aggregate({
+          where: {
+            almacen_id: input.almacenOrigenId,
+            producto_id: producto.id,
+          },
+          _sum: { cantidad_actual: true, cantidad_reservada: true },
+        });
+
+        const currentAvailable =
+          (originStockAgg._sum.cantidad_actual ?? 0) -
+          (originStockAgg._sum.cantidad_reservada ?? 0);
+
+        if (currentAvailable < line.cantidad) {
+          throw new BadRequestException(
+            `Stock insuficiente para "${producto.nombre}" en el almacén de origen (disponible: ${Math.max(0, currentAvailable)}, solicitado: ${line.cantidad})`,
+          );
+        }
       }
 
       validatedLines.push({
@@ -608,11 +784,26 @@ export class InventoryService {
         );
       }
 
+      let resolvedTransferLotId = line.lote_id;
+
       if (mov.almacen_origen_id) {
+        const originStock = await tx.stock_almacen.findFirst({
+          where: {
+            almacen_id: mov.almacen_origen_id,
+            producto_id: line.producto_id,
+            ...(line.lote_id ? { lote_id: line.lote_id } : {}),
+          },
+          orderBy: { cantidad_actual: 'desc' },
+        });
+
+        if (originStock?.lote_id && !resolvedTransferLotId) {
+          resolvedTransferLotId = originStock.lote_id;
+        }
+
         await this.adjustStockInTx(tx, {
           almacenId: mov.almacen_origen_id,
           productoId: line.producto_id,
-          loteId: line.lote_id,
+          loteId: resolvedTransferLotId,
           delta: -line.cantidad,
           allowNegative,
         });
@@ -622,7 +813,7 @@ export class InventoryService {
         await this.adjustStockInTx(tx, {
           almacenId: mov.almacen_destino_id,
           productoId: line.producto_id,
-          loteId: line.lote_id,
+          loteId: resolvedTransferLotId,
           delta: line.cantidad,
           allowNegative: true,
         });
@@ -638,7 +829,7 @@ export class InventoryService {
       include: {
         detalle_movimiento: {
           include: {
-            producto: { select: { id: true, nombre: true, sku: true } },
+            producto: { select: { id: true, nombre: true, sku: true, codigo_barras: true } },
             producto_lote: { select: { id: true, codigo_lote: true } },
           },
         },
@@ -793,13 +984,34 @@ export class InventoryService {
       allowNegative: boolean;
     },
   ): Promise<void> {
-    const existing = await tx.stock_almacen.findFirst({
+    let existing = await tx.stock_almacen.findFirst({
       where: {
         almacen_id: params.almacenId,
         producto_id: params.productoId,
         lote_id: params.loteId,
       },
     });
+
+    if (!existing && params.delta < 0) {
+      existing = await tx.stock_almacen.findFirst({
+        where: {
+          almacen_id: params.almacenId,
+          producto_id: params.productoId,
+          cantidad_actual: { gt: 0 },
+        },
+        orderBy: { cantidad_actual: 'desc' },
+      });
+    }
+
+    if (!existing && params.delta > 0 && params.loteId === null) {
+      existing = await tx.stock_almacen.findFirst({
+        where: {
+          almacen_id: params.almacenId,
+          producto_id: params.productoId,
+        },
+        orderBy: { cantidad_actual: 'desc' },
+      });
+    }
 
     if (!existing) {
       if (params.delta < 0 && !params.allowNegative) {

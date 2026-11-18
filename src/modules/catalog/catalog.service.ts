@@ -138,6 +138,13 @@ export class CatalogService {
   private formatProductResponse(p: any) {
     if (!p) return p;
     const pol = Array.isArray(p.politica_reposicion) ? p.politica_reposicion[0] : undefined;
+    const stockTotal = Array.isArray(p.stock_almacen)
+      ? p.stock_almacen.reduce(
+          (sum: number, s: any) => sum + Number(s.cantidad_actual || 0),
+          0,
+        )
+      : Number(p.stockTotal ?? 0);
+
     return {
       ...p,
       precioVenta:
@@ -155,6 +162,7 @@ export class CatalogService {
       stockMinimo: pol?.stock_seguridad ?? p.stockMinimo ?? 0,
       puntoReorden: pol?.punto_reorden ?? p.puntoReorden ?? 0,
       stockMaximo: pol?.stock_maximo ?? p.stockMaximo ?? 0,
+      stockTotal,
     };
   }
 
@@ -186,6 +194,9 @@ export class CatalogService {
         politica_reposicion: {
           select: { stock_seguridad: true, punto_reorden: true, stock_maximo: true },
           take: 1,
+        },
+        stock_almacen: {
+          select: { cantidad_actual: true, almacen_id: true },
         },
       },
       orderBy: { nombre: 'asc' },

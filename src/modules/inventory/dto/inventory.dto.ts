@@ -98,11 +98,11 @@ export class CreateMovimientoDto {
   @IsUUID()
   proveedorId?: string;
 
-  @ApiProperty({ example: 'Compra semanal a proveedor principal' })
+  @ApiPropertyOptional({ example: 'Movimiento de inventario' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(255)
-  motivo: string;
+  motivo?: string;
 
   @ApiPropertyOptional({ example: 'TRF-2026-001' })
   @IsOptional()
@@ -132,5 +132,46 @@ export class AnularMovimientoDto {
   @IsString()
   @MaxLength(255)
   motivo?: string;
+}
+
+export class UpdateMovimientoDto {
+  @ApiPropertyOptional({ enum: movimiento_tipo })
+  @IsOptional()
+  @IsEnum(movimiento_tipo)
+  tipo?: movimiento_tipo;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  almacenOrigenId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  almacenDestinoId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  proveedorId?: string;
+
+  @ApiPropertyOptional({ example: 'Actualización de motivo' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  motivo?: string;
+
+  @ApiPropertyOptional({ example: 'TRF-2026-001' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  codigoTransferencia?: string;
+
+  @ApiPropertyOptional({ type: [DetalleMovimientoItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DetalleMovimientoItemDto)
+  detalles?: DetalleMovimientoItemDto[];
 }
 

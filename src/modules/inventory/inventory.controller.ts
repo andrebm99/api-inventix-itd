@@ -6,6 +6,7 @@ import {
   ParseBoolPipe,
   ParseEnumPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -14,7 +15,7 @@ import { movimiento_estado, movimiento_tipo } from '@prisma/client';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator.js';
 import { TenantAuth } from '../../core/decorators/tenant-auth.decorator.js';
 import type { TenantContext } from '../../core/types/auth.types.js';
-import { AnularMovimientoDto, CreateMovimientoDto } from './dto/inventory.dto.js';
+import { AnularMovimientoDto, CreateMovimientoDto, UpdateMovimientoDto } from './dto/inventory.dto.js';
 import { InventoryService } from './inventory.service.js';
 
 @ApiTags('Inventario, Stock (LPN) y Kárdex')
@@ -98,6 +99,17 @@ export class InventoryController {
   })
   createMovement(@CurrentTenant() tenant: TenantContext, @Body() dto: CreateMovimientoDto) {
     return this.inventoryService.createMovement(tenant, dto);
+  }
+
+  @TenantAuth('inventario:write')
+  @Patch('movimientos/:id')
+  @ApiOperation({ summary: 'Editar movimiento y recalcular existencias de kárdex' })
+  updateMovement(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMovimientoDto,
+  ) {
+    return this.inventoryService.updateMovement(tenant, id, dto);
   }
 
   @TenantAuth('inventario:approve')
