@@ -135,13 +135,36 @@ export class CatalogService {
 
   // ==================== PRODUCTOS ====================
 
+  private formatProductResponse(p: any) {
+    if (!p) return p;
+    const pol = Array.isArray(p.politica_reposicion) ? p.politica_reposicion[0] : undefined;
+    return {
+      ...p,
+      precioVenta:
+        p.precio_venta_base !== undefined && p.precio_venta_base !== null
+          ? Number(p.precio_venta_base)
+          : Number(p.precioVenta || 0),
+      costoPromedio:
+        p.costo_promedio !== undefined && p.costo_promedio !== null
+          ? Number(p.costo_promedio)
+          : Number(p.costoPromedio || 0),
+      codigoBarras: p.codigo_barras ?? p.codigoBarras ?? null,
+      categoriaId: p.categoria_id ?? p.categoriaId ?? null,
+      unidadMedidaId: p.unidad_medida_id ?? p.unidadMedidaId ?? null,
+      manejaLotes: p.maneja_lotes ?? p.manejaLotes ?? false,
+      stockMinimo: pol?.stock_seguridad ?? p.stockMinimo ?? 0,
+      puntoReorden: pol?.punto_reorden ?? p.puntoReorden ?? 0,
+      stockMaximo: pol?.stock_maximo ?? p.stockMaximo ?? 0,
+    };
+  }
+
   async listProducts(
     negocioId: string,
     filters?: { search?: string; categoriaId?: string; activo?: boolean },
   ) {
     const search = filters?.search?.trim();
 
-    return this.prisma.producto.findMany({
+    const products = await this.prisma.producto.findMany({
       where: {
         negocio_id: negocioId,
         deleted_at: null,
@@ -160,9 +183,15 @@ export class CatalogService {
       include: {
         categoria: { select: { id: true, nombre: true } },
         unidad_medida: { select: { id: true, nombre: true, simbolo: true } },
+        politica_reposicion: {
+          select: { stock_seguridad: true, punto_reorden: true, stock_maximo: true },
+          take: 1,
+        },
       },
       orderBy: { nombre: 'asc' },
     });
+
+    return products.map((p) => this.formatProductResponse(p));
   }
 
   async getProduct(negocioId: string, id: string) {
@@ -171,6 +200,10 @@ export class CatalogService {
       include: {
         categoria: { select: { id: true, nombre: true } },
         unidad_medida: { select: { id: true, nombre: true, simbolo: true } },
+        politica_reposicion: {
+          select: { stock_seguridad: true, punto_reorden: true, stock_maximo: true },
+          take: 1,
+        },
         producto_lote: { orderBy: { fecha_vencimiento: 'asc' } },
         producto_ubicacion_almacen: {
           include: {
@@ -195,7 +228,7 @@ export class CatalogService {
       throw new NotFoundException('Producto no encontrado');
     }
 
-    return producto;
+    return this.formatProductResponse(producto);
   }
 
   async createProduct(tenant: TenantContext, dto: CreateProductoDto) {
@@ -229,7 +262,12 @@ export class CatalogService {
       }
     }
 
-    return this.prisma.producto.create({
+    const finalPrecioVenta = dto.precioVentaBase ?? dto.precioVenta;
+    if (finalPrecioVenta === undefined) {
+      throw new BadRequestException('El precio de venta es obligatorio');
+    }
+
+    const created = await this.prisma.producto.create({
       data: {
         negocio_id: tenant.negocioId,
         categoria_id: dto.categoriaId ?? null,
@@ -239,7 +277,7 @@ export class CatalogService {
         nombre: dto.nombre.trim(),
         descripcion: dto.descripcion?.trim() ?? null,
         costo_promedio: dto.costoPromedio ?? 0,
-        precio_venta_base: dto.precioVentaBase,
+        precio_venta_base: finalPrecioVenta,
         maneja_lotes: dto.manejaLotes ?? false,
       },
       include: {
@@ -247,6 +285,37 @@ export class CatalogService {
         unidad_medida: { select: { id: true, nombre: true, simbolo: true } },
       },
     });
+
+    if (dto.stockMinimo !== undefined || dto.puntoReorden !== undefined || dto.stockMaximo !== undefined) {
+      const defaultAlmacen = await this.prisma.almacen.findFirst({
+        where: { sucursal: { negocio_id: tenant.negocioId }, activo: true },
+        orderBy: { created_at: 'asc' },
+      });
+      if (defaultAlmacen) {
+        await this.prisma.politica_reposicion.upsert({
+          where: {
+            producto_id_almacen_id: {
+              producto_id: created.id,
+              almacen_id: defaultAlmacen.id,
+            },
+          },
+          create: {
+            producto_id: created.id,
+            almacen_id: defaultAlmacen.id,
+            stock_seguridad: dto.stockMinimo ?? 0,
+            punto_reorden: dto.puntoReorden ?? 0,
+            stock_maximo: dto.stockMaximo ?? 0,
+          },
+          update: {
+            stock_seguridad: dto.stockMinimo,
+            punto_reorden: dto.puntoReorden,
+            stock_maximo: dto.stockMaximo,
+          },
+        });
+      }
+    }
+
+    return this.formatProductResponse(created);
   }
 
   async updateProduct(tenant: TenantContext, id: string, dto: UpdateProductoDto) {
@@ -291,7 +360,9 @@ export class CatalogService {
       }
     }
 
-    return this.prisma.producto.update({
+    const finalPrecioVenta = dto.precioVentaBase !== undefined ? dto.precioVentaBase : dto.precioVenta;
+
+    const updated = await this.prisma.producto.update({
       where: { id },
       data: {
         ...(dto.categoriaId !== undefined ? { categoria_id: dto.categoriaId } : {}),
@@ -300,12 +371,48 @@ export class CatalogService {
         ...(dto.codigoBarras !== undefined ? { codigo_barras: dto.codigoBarras.trim() } : {}),
         ...(dto.nombre !== undefined ? { nombre: dto.nombre.trim() } : {}),
         ...(dto.descripcion !== undefined ? { descripcion: dto.descripcion.trim() } : {}),
-        ...(dto.precioVentaBase !== undefined ? { precio_venta_base: dto.precioVentaBase } : {}),
+        ...(finalPrecioVenta !== undefined ? { precio_venta_base: finalPrecioVenta } : {}),
+        ...(dto.costoPromedio !== undefined ? { costo_promedio: dto.costoPromedio } : {}),
         ...(dto.manejaLotes !== undefined ? { maneja_lotes: dto.manejaLotes } : {}),
         ...(dto.activo !== undefined ? { activo: dto.activo } : {}),
         updated_at: new Date(),
       },
+      include: {
+        categoria: { select: { id: true, nombre: true } },
+        unidad_medida: { select: { id: true, nombre: true, simbolo: true } },
+      },
     });
+
+    if (dto.stockMinimo !== undefined || dto.puntoReorden !== undefined || dto.stockMaximo !== undefined) {
+      const defaultAlmacen = await this.prisma.almacen.findFirst({
+        where: { sucursal: { negocio_id: tenant.negocioId }, activo: true },
+        orderBy: { created_at: 'asc' },
+      });
+      if (defaultAlmacen) {
+        await this.prisma.politica_reposicion.upsert({
+          where: {
+            producto_id_almacen_id: {
+              producto_id: id,
+              almacen_id: defaultAlmacen.id,
+            },
+          },
+          create: {
+            producto_id: id,
+            almacen_id: defaultAlmacen.id,
+            stock_seguridad: dto.stockMinimo ?? 0,
+            punto_reorden: dto.puntoReorden ?? 0,
+            stock_maximo: dto.stockMaximo ?? 0,
+          },
+          update: {
+            ...(dto.stockMinimo !== undefined ? { stock_seguridad: dto.stockMinimo } : {}),
+            ...(dto.puntoReorden !== undefined ? { punto_reorden: dto.puntoReorden } : {}),
+            ...(dto.stockMaximo !== undefined ? { stock_maximo: dto.stockMaximo } : {}),
+          },
+        });
+      }
+    }
+
+    return this.formatProductResponse(updated);
   }
 
   async softDeleteProduct(negocioId: string, id: string) {

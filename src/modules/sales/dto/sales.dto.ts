@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -12,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -75,6 +77,28 @@ export class CreateVentaDto {
   @MaxLength(50)
   numeroComprobante?: string;
 
+  @ApiPropertyOptional({ example: 'BOLETA', enum: ['BOLETA', 'FACTURA', 'TICKET'] })
+  @IsOptional()
+  @IsString()
+  tipoComprobante?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  autoCorrelativo?: boolean;
+
+  @ApiPropertyOptional({ example: 'Cliente Mostrador' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  clienteNombre?: string;
+
+  @ApiPropertyOptional({ example: '10778899112' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  clienteDocumento?: string;
+
   @ApiPropertyOptional({ example: 0, minimum: 0 })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -104,10 +128,16 @@ export class CreateVentaDto {
 }
 
 export class AnularVentaDto {
-  @ApiPropertyOptional({ example: 'Devolución total del cliente' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  motivo?: string;
+  @ApiProperty({
+    example: 'Error de digitación en los productos vendidos, solicitado por el cliente en caja',
+    minLength: 30,
+  })
+  @IsNotEmpty({ message: 'La justificación de anulación es obligatoria' })
+  @IsString({ message: 'La justificación debe ser texto' })
+  @MinLength(30, {
+    message: 'La justificación de anulación debe tener al menos 30 caracteres explicativos',
+  })
+  @MaxLength(500)
+  motivo: string;
 }
 

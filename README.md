@@ -15,16 +15,20 @@ Backend modular en **NestJS 12**, **Prisma ORM 6.19**, **MySQL 8.0** y **Gemini 
 
 ## 🔑 Credenciales de Acceso Rápido (Demo)
 
-El sistema cuenta con un seeder inicial preconfigurado con una empresa retail real:
+El sistema cuenta con datos de demostración precargados (`Bodega InventiX Demo`):
 
-* **Correo:** `admin@inventix.com`
-* **Contraseña:** `Secret123!`
-* **Empresa / Negocio:** `Minimarket La Esquina` (RUC `20609876543`)
+### 1. Acceso Principal (Propietario):
+* **Correo:** `propietario@demo.inventix.pe`
+* **Contraseña:** `Demo1234!`
+* **Empresa / Negocio:** `Bodega InventiX Demo` (RUC `20999999991`)
 * **Rol:** `PROPIETARIO` (Control total y administración)
 
-### Usuarios de Colaboración:
-* **Cajero:** `cajero@inventix.com` / `Secret123!` (Rol: `CAJERO`)
-* **Almacenero:** `almacen@inventix.com` / `Secret123!` (Rol: `OPERADOR_ALMACEN`)
+### 2. Acceso de Ventas (Vendedor / Cajero):
+* **Correo:** `vendedor@demo.inventix.pe`
+* **Contraseña:** `Demo1234!`
+* **Rol:** `VENDEDOR` / `CAJERO`
+
+> **Nota:** También puedes registrar libremente nuevos usuarios y empresas desde la pantalla de login del frontend.
 
 ---
 

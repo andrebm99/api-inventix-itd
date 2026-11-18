@@ -90,10 +90,35 @@ export class CreateProductoDto {
   @Min(0)
   costoPromedio?: number;
 
-  @ApiProperty({ example: 5.2, minimum: 0 })
+  @ApiPropertyOptional({ example: 5.2, minimum: 0 })
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  precioVentaBase: number;
+  precioVentaBase?: number;
+
+  @ApiPropertyOptional({ example: 5.2, minimum: 0 })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  precioVenta?: number;
+
+  @ApiPropertyOptional({ example: 10, minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  stockMinimo?: number;
+
+  @ApiPropertyOptional({ example: 100, minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  stockMaximo?: number;
+
+  @ApiPropertyOptional({ example: 15, minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  puntoReorden?: number;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
@@ -136,11 +161,41 @@ export class UpdateProductoDto {
   @IsString()
   descripcion?: string;
 
+  @ApiPropertyOptional({ example: 3.5, minimum: 0 })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  costoPromedio?: number;
+
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   precioVentaBase?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  precioVenta?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  stockMinimo?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  stockMaximo?: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  puntoReorden?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

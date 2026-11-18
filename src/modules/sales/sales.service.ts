@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { almacen_tipo, movimiento_tipo, venta_estado } from '@prisma/client';
+import { almacen_tipo, movimiento_tipo, producto_lote_estado, venta_estado } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import type { TenantContext } from '../../core/types/auth.types.js';
 import { InventoryService } from '../inventory/inventory.service.js';
@@ -34,7 +34,29 @@ export class SalesService {
       include: {
         sucursal: { select: { id: true, nombre: true } },
         almacen: { select: { id: true, nombre: true, tipo: true } },
-        usuario: { select: { id: true, nombre: true } },
+        usuario: { select: { id: true, nombre: true, correo: true } },
+        movimiento: {
+          select: {
+            id: true,
+            tipo: true,
+            estado: true,
+            motivo: true,
+            fecha_aplicacion: true,
+            other_movimiento: {
+              select: {
+                id: true,
+                motivo: true,
+                fecha_aplicacion: true,
+                usuario: { select: { id: true, nombre: true, correo: true } },
+              },
+            },
+          },
+        },
+        detalle_venta: {
+          include: {
+            producto: { select: { id: true, nombre: true, sku: true } },
+          },
+        },
         pago_venta: {
           include: { metodo_pago: { select: { id: true, nombre: true } } },
         },
@@ -51,7 +73,21 @@ export class SalesService {
         almacen: { select: { id: true, nombre: true, tipo: true } },
         usuario: { select: { id: true, nombre: true, correo: true } },
         movimiento: {
-          select: { id: true, tipo: true, estado: true, fecha_aplicacion: true },
+          select: {
+            id: true,
+            tipo: true,
+            estado: true,
+            motivo: true,
+            fecha_aplicacion: true,
+            other_movimiento: {
+              select: {
+                id: true,
+                motivo: true,
+                fecha_aplicacion: true,
+                usuario: { select: { id: true, nombre: true, correo: true } },
+              },
+            },
+          },
         },
         detalle_venta: {
           include: {
@@ -100,8 +136,15 @@ export class SalesService {
       throw new BadRequestException('Uno o más métodos de pago no existen o están inactivos');
     }
 
-    const numeroComprobante =
-      dto.numeroComprobante?.trim() || `VTA-${Date.now().toString().slice(-8)}`;
+    let numeroComprobante = dto.numeroComprobante?.trim();
+    if (!numeroComprobante || dto.autoCorrelativo) {
+      const tipo = (dto.tipoComprobante || 'BOLETA').toUpperCase();
+      const prefix = tipo === 'FACTURA' ? 'F001' : tipo === 'TICKET' ? 'T001' : 'B001';
+      const count = await this.prisma.venta.count({
+        where: { negocio_id: tenant.negocioId },
+      });
+      numeroComprobante = `${prefix}-${String(count + 1).padStart(6, '0')}`;
+    }
 
     const created = await this.prisma.$transaction(async (tx) => {
       let subtotal = 0;
@@ -132,10 +175,42 @@ export class SalesService {
           );
         }
 
+        let resolvedLoteId = item.loteId ?? null;
+        if (producto.maneja_lotes && !resolvedLoteId) {
+          const fefoLote = await tx.stock_almacen.findFirst({
+            where: {
+              almacen_id: almacen.id,
+              producto_id: producto.id,
+              lote_id: { not: null },
+              cantidad_actual: { gt: 0 },
+              producto_lote: {
+                estado: { in: [producto_lote_estado.DISPONIBLE, producto_lote_estado.POR_VENCER] },
+                fecha_vencimiento: { gt: new Date() },
+              },
+            },
+            include: { producto_lote: true },
+            orderBy: { producto_lote: { fecha_vencimiento: 'asc' } },
+          });
+
+          if (fefoLote?.lote_id) {
+            resolvedLoteId = fefoLote.lote_id;
+          } else {
+            const anyActive = await tx.producto_lote.findFirst({
+              where: {
+                producto_id: producto.id,
+                estado: { in: [producto_lote_estado.DISPONIBLE, producto_lote_estado.POR_VENCER] },
+                fecha_vencimiento: { gt: new Date() },
+              },
+              orderBy: { fecha_vencimiento: 'asc' },
+            });
+            resolvedLoteId = anyActive?.id ?? null;
+          }
+        }
+
         subtotal += subtotalLinea;
         saleLines.push({
           producto_id: producto.id,
-          lote_id: item.loteId ?? null,
+          lote_id: resolvedLoteId,
           cantidad: item.cantidad,
           precio_unitario: precioUnitario,
           descuento,
@@ -255,13 +330,30 @@ export class SalesService {
         throw new BadRequestException('La venta ya fue anulada');
       }
 
+      // Validar ventana máxima de 24 horas desde la emisión
+      const saleDate = venta.fecha_venta ? new Date(venta.fecha_venta).getTime() : 0;
+      const hoursElapsed = (Date.now() - saleDate) / (1000 * 60 * 60);
+      if (hoursElapsed > 24) {
+        throw new BadRequestException(
+          'Solo se pueden anular comprobantes dentro de las primeras 24 horas posteriores a su emisión.',
+        );
+      }
+
+      // Validar justificación obligatoria con mínimo 30 caracteres
+      const motivo = dto?.motivo?.trim();
+      if (!motivo || motivo.length < 30) {
+        throw new BadRequestException(
+          'La justificación de anulación es obligatoria y debe tener un mínimo de 30 caracteres explicativos.',
+        );
+      }
+
       let reversalResult: unknown = null;
       if (venta.movimiento_id) {
         reversalResult = await this.inventoryService.cancelMovementInTx(
           tx,
           tenant,
           venta.movimiento_id,
-          dto?.motivo ?? `Anulación de venta ${venta.numero_comprobante}`,
+          motivo,
         );
       }
 

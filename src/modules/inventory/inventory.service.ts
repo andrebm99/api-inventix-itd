@@ -412,17 +412,63 @@ export class InventoryService {
         throw new NotFoundException(`Producto ${line.productoId} no encontrado`);
       }
 
+      let resolvedLoteId: string | null = line.loteId ?? null;
       if (producto.maneja_lotes) {
-        if (!line.loteId) {
+        if (!resolvedLoteId) {
+          const fefoLote = await tx.stock_almacen.findFirst({
+            where: {
+              ...(input.almacenOrigenId ? { almacen_id: input.almacenOrigenId } : {}),
+              producto_id: producto.id,
+              lote_id: { not: null },
+              cantidad_actual: { gt: 0 },
+              producto_lote: {
+                estado: {
+                  in: [
+                    producto_lote_estado.DISPONIBLE,
+                    producto_lote_estado.POR_VENCER,
+                  ],
+                },
+                fecha_vencimiento: { gt: new Date() },
+              },
+            },
+            include: { producto_lote: true },
+            orderBy: { producto_lote: { fecha_vencimiento: 'asc' } },
+          });
+          if (fefoLote?.lote_id) {
+            resolvedLoteId = fefoLote.lote_id;
+          } else {
+            const anyActive = await tx.producto_lote.findFirst({
+              where: {
+                producto_id: producto.id,
+                estado: {
+                  in: [
+                    producto_lote_estado.DISPONIBLE,
+                    producto_lote_estado.POR_VENCER,
+                  ],
+                },
+                fecha_vencimiento: { gt: new Date() },
+              },
+              orderBy: { fecha_vencimiento: 'asc' },
+            });
+            if (anyActive) {
+              resolvedLoteId = anyActive.id;
+            } else {
+              throw new BadRequestException(
+                `El producto "${producto.nombre}" requiere especificar un loteId o no tiene lotes activos disponibles`,
+              );
+            }
+          }
+        }
+        if (!resolvedLoteId) {
           throw new BadRequestException(
-            `El producto "${producto.nombre}" requiere especificar un loteId`,
+            `No se pudo determinar un lote válido para "${producto.nombre}"`,
           );
         }
         const lote = await tx.producto_lote.findFirst({
-          where: { id: line.loteId, producto_id: producto.id },
+          where: { id: resolvedLoteId, producto_id: producto.id },
         });
         if (!lote) {
-          throw new NotFoundException(`Lote ${line.loteId} no pertenece al producto`);
+          throw new NotFoundException(`Lote ${resolvedLoteId} no pertenece al producto`);
         }
         if (
           (input.tipo === movimiento_tipo.SALIDA_VENTA ||
@@ -434,7 +480,7 @@ export class InventoryService {
             `El lote ${lote.codigo_lote} está en estado ${lote.estado} y no puede despacharse`,
           );
         }
-      } else if (line.loteId) {
+      } else if (resolvedLoteId) {
         throw new BadRequestException(
           `El producto "${producto.nombre}" no maneja lotes (loteId debe omitirse)`,
         );
@@ -442,7 +488,7 @@ export class InventoryService {
 
       validatedLines.push({
         producto_id: producto.id,
-        lote_id: line.loteId ?? null,
+        lote_id: resolvedLoteId,
         cantidad: line.cantidad,
         costo_unitario: line.costoUnitario ?? Number(producto.costo_promedio ?? 0),
         descuento_unitario: line.descuentoUnitario ?? 0,
