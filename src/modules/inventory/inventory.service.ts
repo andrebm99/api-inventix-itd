@@ -19,6 +19,10 @@ import type { AnularMovimientoDto, CreateMovimientoDto } from './dto/inventory.d
 export interface MovementLineInput {
   productoId: string;
   loteId?: string | null;
+  numeroLote?: string;
+  codigoLote?: string;
+  fechaVencimiento?: string;
+  fechaFabricacion?: string;
   cantidad: number;
   costoUnitario?: number;
   descuentoUnitario?: number;
@@ -236,10 +240,32 @@ export class InventoryService {
       }
     }
 
+    let sucursalId = dto.sucursalId;
+    if (!sucursalId) {
+      const whId = dto.almacenDestinoId || dto.almacenOrigenId;
+      if (whId) {
+        const wh = await this.prisma.almacen.findFirst({
+          where: { id: whId },
+          select: { sucursal_id: true },
+        });
+        sucursalId = wh?.sucursal_id;
+      }
+      if (!sucursalId) {
+        const suc = await this.prisma.sucursal.findFirst({
+          where: { negocio_id: tenant.negocioId, deleted_at: null },
+          select: { id: true },
+        });
+        sucursalId = suc?.id;
+      }
+      if (!sucursalId) {
+        throw new BadRequestException('No se encontró sucursal activa para este movimiento');
+      }
+    }
+
     const created = await this.prisma.$transaction(async (tx) => {
       const mov = await this.createDraftMovementInTx(tx, {
         negocioId: tenant.negocioId,
-        sucursalId: dto.sucursalId,
+        sucursalId,
         usuarioId: tenant.usuarioId,
         tipo: dto.tipo,
         almacenOrigenId: dto.almacenOrigenId ?? null,
@@ -413,7 +439,37 @@ export class InventoryService {
       }
 
       let resolvedLoteId: string | null = line.loteId ?? null;
-      if (producto.maneja_lotes) {
+      const lotCode = (line.numeroLote || line.codigoLote)?.trim();
+
+      if (lotCode && line.fechaVencimiento) {
+        let existingLot = await tx.producto_lote.findFirst({
+          where: { producto_id: producto.id, codigo_lote: lotCode },
+        });
+        if (!existingLot) {
+          const expiration = new Date(
+            line.fechaVencimiento.length === 10
+              ? `${line.fechaVencimiento}T12:00:00Z`
+              : line.fechaVencimiento,
+          );
+          const fab = line.fechaFabricacion
+            ? new Date(
+                line.fechaFabricacion.length === 10
+                  ? `${line.fechaFabricacion}T12:00:00Z`
+                  : line.fechaFabricacion,
+              )
+            : null;
+          existingLot = await tx.producto_lote.create({
+            data: {
+              producto_id: producto.id,
+              codigo_lote: lotCode,
+              fecha_vencimiento: expiration,
+              fecha_fabricacion: fab,
+              estado: producto_lote_estado.DISPONIBLE,
+            },
+          });
+        }
+        resolvedLoteId = existingLot.id;
+      } else if (producto.maneja_lotes) {
         if (!resolvedLoteId) {
           const fefoLote = await tx.stock_almacen.findFirst({
             where: {

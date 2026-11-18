@@ -27,6 +27,28 @@ export class DetalleMovimientoItemDto {
   @IsUUID()
   loteId?: string;
 
+  @ApiPropertyOptional({ example: 'LOT-2026-A' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  numeroLote?: string;
+
+  @ApiPropertyOptional({ example: 'LOT-2026-A' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  codigoLote?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  fechaVencimiento?: string;
+
+  @ApiPropertyOptional({ example: '2026-01-01' })
+  @IsOptional()
+  @IsString()
+  fechaFabricacion?: string;
+
   @ApiProperty({ example: 10, minimum: 1 })
   @IsInt()
   @Min(1)
@@ -50,9 +72,10 @@ export class CreateMovimientoDto {
   @IsEnum(movimiento_tipo)
   tipo: movimiento_tipo;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
   @IsUUID()
-  sucursalId: string;
+  sucursalId?: string;
 
   @ApiPropertyOptional({
     format: 'uuid',
