@@ -8,7 +8,12 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import type { TenantContext } from '../../core/types/auth.types.js';
-import type { CreateRolDto, InviteMemberDto, UpdateMemberDto, UpdateRolDto } from './dto/iam.dto.js';
+import type {
+  CreateRolDto,
+  InviteMemberDto,
+  UpdateMemberDto,
+  UpdateRolDto,
+} from './dto/iam.dto.js';
 
 @Injectable()
 export class IamService {
@@ -47,7 +52,12 @@ export class IamService {
   }
 
   async createRole(tenant: TenantContext, dto: CreateRolDto) {
-    this.assertHierarchy(tenant.rol.nivelJerarquia, dto.nivelJerarquia, 'crear un rol');
+    this.assertHierarchy(
+      tenant.rol.nivelJerarquia,
+      dto.nivelJerarquia,
+      'crear un rol',
+    );
+    this.assertCanGrantPermissions(tenant, dto.permisoClaves);
 
     const nombre = dto.nombre.trim();
     const dup = await this.prisma.rol.findFirst({
@@ -64,7 +74,9 @@ export class IamService {
       where: { clave: { in: dto.permisoClaves } },
     });
     if (permisos.length !== new Set(dto.permisoClaves).size) {
-      throw new BadRequestException('Uno o más permisos especificados no existen');
+      throw new BadRequestException(
+        'Uno o más permisos especificados no existen',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -94,13 +106,23 @@ export class IamService {
       throw new NotFoundException('Rol no encontrado');
     }
     if (role.negocio_id !== tenant.negocioId) {
-      throw new ForbiddenException('No puedes modificar roles globales o de otro negocio');
+      throw new ForbiddenException(
+        'No puedes modificar roles globales o de otro negocio',
+      );
     }
 
     const currentLevel = role.nivel_jerarquia ?? 1;
-    this.assertHierarchy(tenant.rol.nivelJerarquia, currentLevel, 'modificar este rol');
+    this.assertHierarchy(
+      tenant.rol.nivelJerarquia,
+      currentLevel,
+      'modificar este rol',
+    );
     if (dto.nivelJerarquia !== undefined) {
-      this.assertHierarchy(tenant.rol.nivelJerarquia, dto.nivelJerarquia, 'asignar este nivel');
+      this.assertHierarchy(
+        tenant.rol.nivelJerarquia,
+        dto.nivelJerarquia,
+        'asignar este nivel',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -108,17 +130,24 @@ export class IamService {
         where: { id: rolId },
         data: {
           ...(dto.nombre !== undefined ? { nombre: dto.nombre.trim() } : {}),
-          ...(dto.descripcion !== undefined ? { descripcion: dto.descripcion.trim() } : {}),
-          ...(dto.nivelJerarquia !== undefined ? { nivel_jerarquia: dto.nivelJerarquia } : {}),
+          ...(dto.descripcion !== undefined
+            ? { descripcion: dto.descripcion.trim() }
+            : {}),
+          ...(dto.nivelJerarquia !== undefined
+            ? { nivel_jerarquia: dto.nivelJerarquia }
+            : {}),
         },
       });
 
       if (dto.permisoClaves !== undefined) {
+        this.assertCanGrantPermissions(tenant, dto.permisoClaves);
         const permisos = await tx.permiso.findMany({
           where: { clave: { in: dto.permisoClaves } },
         });
         if (permisos.length !== new Set(dto.permisoClaves).size) {
-          throw new BadRequestException('Uno o más permisos especificados no existen');
+          throw new BadRequestException(
+            'Uno o más permisos especificados no existen',
+          );
         }
         await tx.rol_permiso.deleteMany({ where: { rol_id: rolId } });
         if (permisos.length > 0) {
@@ -137,7 +166,13 @@ export class IamService {
       where: { negocio_id: negocioId },
       include: {
         usuario_usuario_negocio_usuario_idTousuario: {
-          select: { id: true, nombre: true, correo: true, activo: true, deleted_at: true },
+          select: {
+            id: true,
+            nombre: true,
+            correo: true,
+            activo: true,
+            deleted_at: true,
+          },
         },
         usuario_usuario_negocio_invitado_por_usuario_idTousuario: {
           select: { id: true, nombre: true, correo: true },
@@ -150,7 +185,10 @@ export class IamService {
     });
 
     return members
-      .filter((m) => m.usuario_usuario_negocio_usuario_idTousuario.deleted_at === null)
+      .filter(
+        (m) =>
+          m.usuario_usuario_negocio_usuario_idTousuario.deleted_at === null,
+      )
       .map((m) => ({
         id: m.id,
         activo: m.activo,
@@ -171,15 +209,24 @@ export class IamService {
         id: dto.rolId,
         OR: [{ negocio_id: null }, { negocio_id: tenant.negocioId }],
       },
+      include: {
+        rol_permiso: { include: { permiso: true } },
+      },
     });
     if (!rol) {
-      throw new NotFoundException('El rol especificado no existe para este negocio');
+      throw new NotFoundException(
+        'El rol especificado no existe para este negocio',
+      );
     }
 
     this.assertHierarchy(
       tenant.rol.nivelJerarquia,
       rol.nivel_jerarquia ?? 1,
       'asignar este rol',
+    );
+    this.assertCanGrantPermissions(
+      tenant,
+      rol.rol_permiso.map((item) => item.permiso.clave),
     );
 
     const email = dto.correo.trim().toLowerCase();
@@ -188,7 +235,9 @@ export class IamService {
       let usuario = await tx.usuario.findFirst({ where: { correo: email } });
 
       if (usuario && usuario.deleted_at !== null) {
-        throw new BadRequestException('La cuenta de usuario asociada fue dada de baja');
+        throw new BadRequestException(
+          'La cuenta de usuario asociada fue dada de baja',
+        );
       }
 
       if (!usuario) {
@@ -236,14 +285,22 @@ export class IamService {
       return {
         id: membership.id,
         activo: membership.activo,
-        usuario: { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo },
+        usuario: {
+          id: usuario.id,
+          nombre: usuario.nombre,
+          correo: usuario.correo,
+        },
         rol: membership.rol,
         invitado_por_usuario_id: membership.invitado_por_usuario_id,
       };
     });
   }
 
-  async updateMember(tenant: TenantContext, membershipId: string, dto: UpdateMemberDto) {
+  async updateMember(
+    tenant: TenantContext,
+    membershipId: string,
+    dto: UpdateMemberDto,
+  ) {
     const target = await this.prisma.usuario_negocio.findFirst({
       where: { id: membershipId, negocio_id: tenant.negocioId },
       include: { rol: true },
@@ -254,7 +311,9 @@ export class IamService {
     }
 
     if (target.usuario_id === tenant.usuarioId) {
-      throw new BadRequestException('No puedes modificar tu propia membresía o rol');
+      throw new BadRequestException(
+        'No puedes modificar tu propia membresía o rol',
+      );
     }
 
     this.assertHierarchy(
@@ -269,6 +328,9 @@ export class IamService {
           id: dto.rolId,
           OR: [{ negocio_id: null }, { negocio_id: tenant.negocioId }],
         },
+        include: {
+          rol_permiso: { include: { permiso: true } },
+        },
       });
       if (!newRole) {
         throw new NotFoundException('El nuevo rol no existe para este negocio');
@@ -277,6 +339,10 @@ export class IamService {
         tenant.rol.nivelJerarquia,
         newRole.nivel_jerarquia ?? 1,
         'asignar el nuevo rol',
+      );
+      this.assertCanGrantPermissions(
+        tenant,
+        newRole.rol_permiso.map((item) => item.permiso.clave),
       );
     }
 
@@ -292,13 +358,37 @@ export class IamService {
     });
   }
 
-  private assertHierarchy(callerLevel: number, targetLevel: number, action: string): void {
-    const allowed = callerLevel >= 100 ? targetLevel <= callerLevel : targetLevel < callerLevel;
+  private assertHierarchy(
+    callerLevel: number,
+    targetLevel: number,
+    action: string,
+  ): void {
+    const allowed =
+      callerLevel >= 100
+        ? targetLevel <= callerLevel
+        : targetLevel < callerLevel;
     if (!allowed) {
       throw new ForbiddenException(
         `Restricción de jerarquía: tu nivel (${callerLevel}) no permite ${action} de nivel ${targetLevel}`,
       );
     }
   }
-}
 
+  private assertCanGrantPermissions(
+    tenant: TenantContext,
+    permissionKeys: string[],
+  ): void {
+    if (tenant.rol.nivelJerarquia >= 100) {
+      return;
+    }
+
+    const unavailable = [...new Set(permissionKeys)].filter(
+      (permission) => !tenant.permisos.includes(permission),
+    );
+    if (unavailable.length > 0) {
+      throw new ForbiddenException(
+        `No puedes delegar permisos que no posees: ${unavailable.join(', ')}`,
+      );
+    }
+  }
+}

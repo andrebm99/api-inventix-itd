@@ -104,10 +104,10 @@ export class NegocioService {
           },
         },
         rol: {
-          select: {
-            id: true,
-            nombre: true,
-            nivel_jerarquia: true,
+          include: {
+            rol_permiso: {
+              include: { permiso: true },
+            },
           },
         },
       },
@@ -116,7 +116,12 @@ export class NegocioService {
 
     return memberships.map((m) => ({
       ...m.negocio,
-      rol: m.rol,
+      rol: {
+        id: m.rol.id,
+        nombre: m.rol.nombre,
+        nivelJerarquia: m.rol.nivel_jerarquia ?? 1,
+        permisos: m.rol.rol_permiso.map((rp) => rp.permiso.clave),
+      },
     }));
   }
 
